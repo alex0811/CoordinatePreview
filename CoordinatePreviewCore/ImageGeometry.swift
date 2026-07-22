@@ -66,6 +66,93 @@ public enum ImageGeometry {
         )
     }
 
+    /// Applies an image-level zoom and pan offset to the aspect-fit rect.
+    ///
+    /// The result is centered within `bounds` (matching `aspectFitRect` when
+    /// `zoom == 1` and `panOffset == .zero`) and then translated by `panOffset`.
+    public static func scaledImageRect(
+        baseFit: CGRect,
+        in bounds: CGRect,
+        zoom: CGFloat,
+        panOffset: CGPoint
+    ) -> CGRect {
+        guard zoom > 0 else { return baseFit }
+
+        let displayedSize = CGSize(
+            width: baseFit.width * zoom,
+            height: baseFit.height * zoom
+        )
+        let centered = CGRect(
+            x: bounds.midX - displayedSize.width / 2,
+            y: bounds.midY - displayedSize.height / 2,
+            width: displayedSize.width,
+            height: displayedSize.height
+        )
+        return centered.offsetBy(dx: panOffset.x, dy: panOffset.y)
+    }
+
+    /// Keeps the image inside `bounds`: when the displayed image is larger than
+    /// the bounds it may pan up to its own overhang; when it is smaller it is
+    /// forced back to the center (offset zero).
+    public static func clampPanOffset(
+        _ panOffset: CGPoint,
+        bounds: CGRect,
+        displayedSize: CGSize
+    ) -> CGPoint {
+        let maxOffsetX = max(0, (displayedSize.width - bounds.width) / 2)
+        let maxOffsetY = max(0, (displayedSize.height - bounds.height) / 2)
+        return CGPoint(
+            x: min(max(panOffset.x, -maxOffsetX), maxOffsetX),
+            y: min(max(panOffset.y, -maxOffsetY), maxOffsetY)
+        )
+    }
+
+    /// Computes the new pan offset so the image point currently under
+    /// `focusPoint` (in view coordinates) stays under it after the zoom changes.
+    public static func panOffsetForZoom(
+        fromZoom: CGFloat,
+        toZoom: CGFloat,
+        focusPoint: CGPoint,
+        baseFit: CGRect,
+        bounds: CGRect,
+        oldPanOffset: CGPoint
+    ) -> CGPoint {
+        guard fromZoom > 0, toZoom > 0 else { return .zero }
+
+        let displayedFrom = scaledImageRect(
+            baseFit: baseFit,
+            in: bounds,
+            zoom: fromZoom,
+            panOffset: oldPanOffset
+        )
+        let displayedToZero = scaledImageRect(
+            baseFit: baseFit,
+            in: bounds,
+            zoom: toZoom,
+            panOffset: .zero
+        )
+
+        guard displayedFrom.width > 0, displayedFrom.height > 0 else {
+            return .zero
+        }
+
+        let normalizedFocus = CGPoint(
+            x: (focusPoint.x - displayedFrom.minX) / displayedFrom.width,
+            y: (focusPoint.y - displayedFrom.minY) / displayedFrom.height
+        )
+
+        let unclampedOffset = CGPoint(
+            x: focusPoint.x - displayedToZero.minX - normalizedFocus.x * displayedToZero.width,
+            y: focusPoint.y - displayedToZero.minY - normalizedFocus.y * displayedToZero.height
+        )
+
+        return clampPanOffset(
+            unclampedOffset,
+            bounds: bounds,
+            displayedSize: displayedToZero.size
+        )
+    }
+
     public static func pixelCoordinate(
         at point: CGPoint,
         in imageRect: CGRect,

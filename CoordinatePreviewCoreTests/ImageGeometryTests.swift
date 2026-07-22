@@ -188,4 +188,202 @@ struct ImageGeometryTests {
         #expect(abs((point?.x ?? 0) - 10.05) < 0.001)
         #expect(abs((point?.y ?? 0) - 20.05) < 0.001)
     }
+
+    // MARK: - Image zoom / pan
+
+    @Test func zoomOfOneMatchesBaseFit() {
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let baseFit = ImageGeometry.aspectFitRect(
+            imageSize: CGSize(width: 2000, height: 1000),
+            in: bounds
+        )
+        let scaled = ImageGeometry.scaledImageRect(
+            baseFit: baseFit,
+            in: bounds,
+            zoom: 1,
+            panOffset: .zero
+        )
+
+        #expect(abs(scaled.minX - baseFit.minX) < 0.001)
+        #expect(abs(scaled.minY - baseFit.minY) < 0.001)
+        #expect(abs(scaled.width - baseFit.width) < 0.001)
+        #expect(abs(scaled.height - baseFit.height) < 0.001)
+    }
+
+    @Test func zoomScalesSizeAroundCenter() {
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let baseFit = ImageGeometry.aspectFitRect(
+            imageSize: CGSize(width: 2000, height: 1000),
+            in: bounds
+        )
+        let scaled = ImageGeometry.scaledImageRect(
+            baseFit: baseFit,
+            in: bounds,
+            zoom: 2,
+            panOffset: .zero
+        )
+
+        #expect(abs(scaled.width - baseFit.width * 2) < 0.001)
+        #expect(abs(scaled.height - baseFit.height * 2) < 0.001)
+        // Centered on the bounds' midpoint, which is also the baseFit midpoint.
+        #expect(abs(scaled.midX - bounds.midX) < 0.001)
+        #expect(abs(scaled.midY - bounds.midY) < 0.001)
+    }
+
+    @Test func panOffsetTranslatesWithoutResizing() {
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let baseFit = ImageGeometry.aspectFitRect(
+            imageSize: CGSize(width: 2000, height: 1000),
+            in: bounds
+        )
+        let scaled = ImageGeometry.scaledImageRect(
+            baseFit: baseFit,
+            in: bounds,
+            zoom: 2,
+            panOffset: CGPoint(x: 50, y: -30)
+        )
+        let untranslated = ImageGeometry.scaledImageRect(
+            baseFit: baseFit,
+            in: bounds,
+            zoom: 2,
+            panOffset: .zero
+        )
+
+        #expect(abs(scaled.minX - (untranslated.minX + 50)) < 0.001)
+        #expect(abs(scaled.minY - (untranslated.minY - 30)) < 0.001)
+        #expect(abs(scaled.width - untranslated.width) < 0.001)
+    }
+
+    @Test func clampAllowsPanningUpToTheOverhang() {
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        // Image displayed larger than the viewport: 2000x800, 500px overhang per side.
+        let displayed = CGSize(width: 2000, height: 800)
+
+        let clamped = ImageGeometry.clampPanOffset(
+            CGPoint(x: 500, y: 200),
+            bounds: bounds,
+            displayedSize: displayed
+        )
+        #expect(abs(clamped.x - 500) < 0.001)
+        #expect(abs(clamped.y) < 0.001)
+    }
+
+    @Test func clampRejectsPanningBeyondOverhang() {
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let displayed = CGSize(width: 2000, height: 800)
+
+        let clamped = ImageGeometry.clampPanOffset(
+            CGPoint(x: 1000, y: 100),
+            bounds: bounds,
+            displayedSize: displayed
+        )
+        // 500 is the max overhang on X, and there is no Y overhang.
+        #expect(abs(clamped.x - 500) < 0.001)
+        #expect(abs(clamped.y) < 0.001)
+    }
+
+    @Test func clampCentersWhenImageFitsInViewport() {
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        // Image smaller than viewport: no panning allowed.
+        let displayed = CGSize(width: 400, height: 200)
+
+        let clamped = ImageGeometry.clampPanOffset(
+            CGPoint(x: 100, y: -100),
+            bounds: bounds,
+            displayedSize: displayed
+        )
+        #expect(abs(clamped.x) < 0.001)
+        #expect(abs(clamped.y) < 0.001)
+    }
+
+    @Test func zoomKeepsCenteredFocusPointStable() {
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let baseFit = ImageGeometry.aspectFitRect(
+            imageSize: CGSize(width: 2000, height: 1000),
+            in: bounds
+        )
+        let focus = bounds.center
+
+        let newOffset = ImageGeometry.panOffsetForZoom(
+            fromZoom: 1,
+            toZoom: 2,
+            focusPoint: focus,
+            baseFit: baseFit,
+            bounds: bounds,
+            oldPanOffset: .zero
+        )
+
+        let scaledFrom = ImageGeometry.scaledImageRect(
+            baseFit: baseFit,
+            in: bounds,
+            zoom: 1,
+            panOffset: .zero
+        )
+        let scaledTo = ImageGeometry.scaledImageRect(
+            baseFit: baseFit,
+            in: bounds,
+            zoom: 2,
+            panOffset: newOffset
+        )
+
+        let fromFocus = CGPoint(
+            x: (focus.x - scaledFrom.minX) / scaledFrom.width,
+            y: (focus.y - scaledFrom.minY) / scaledFrom.height
+        )
+        let toFocus = CGPoint(
+            x: (focus.x - scaledTo.minX) / scaledTo.width,
+            y: (focus.y - scaledTo.minY) / scaledTo.height
+        )
+        #expect(abs(fromFocus.x - toFocus.x) < 0.001)
+        #expect(abs(fromFocus.y - toFocus.y) < 0.001)
+    }
+
+    @Test func zoomFromUserOffsetKeepsFocusPointStable() {
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let baseFit = ImageGeometry.aspectFitRect(
+            imageSize: CGSize(width: 2000, height: 1000),
+            in: bounds
+        )
+        let oldOffset = CGPoint(x: 200, y: -100)
+        let focus = CGPoint(x: 300, y: 200)
+
+        let newOffset = ImageGeometry.panOffsetForZoom(
+            fromZoom: 2,
+            toZoom: 3,
+            focusPoint: focus,
+            baseFit: baseFit,
+            bounds: bounds,
+            oldPanOffset: oldOffset
+        )
+
+        let scaledFrom = ImageGeometry.scaledImageRect(
+            baseFit: baseFit,
+            in: bounds,
+            zoom: 2,
+            panOffset: oldOffset
+        )
+        let scaledTo = ImageGeometry.scaledImageRect(
+            baseFit: baseFit,
+            in: bounds,
+            zoom: 3,
+            panOffset: newOffset
+        )
+
+        let fromFocus = CGPoint(
+            x: (focus.x - scaledFrom.minX) / scaledFrom.width,
+            y: (focus.y - scaledFrom.minY) / scaledFrom.height
+        )
+        let toFocus = CGPoint(
+            x: (focus.x - scaledTo.minX) / scaledTo.width,
+            y: (focus.y - scaledTo.minY) / scaledTo.height
+        )
+        #expect(abs(fromFocus.x - toFocus.x) < 0.001)
+        #expect(abs(fromFocus.y - toFocus.y) < 0.001)
+    }
+}
+
+private extension CGRect {
+    var center: CGPoint {
+        CGPoint(x: midX, y: midY)
+    }
 }

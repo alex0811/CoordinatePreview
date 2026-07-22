@@ -12,15 +12,34 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
     private static let magnifierZoomDefaultsKey = "MagnifierZoom"
     private static let magnifierPreviewSide: CGFloat = 132
 
+    /// Discrete image zoom steps. `1.0` is the "fit in window" default.
+    private static let imageZoomSteps: [CGFloat] = [
+        0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 6.0
+    ]
+    private static let defaultImageZoom: CGFloat = 1.0
+    private static let minimumImageZoom = imageZoomSteps[0]
+    private static let maximumImageZoom = imageZoomSteps[imageZoomSteps.count - 1]
+
     private let image: NSImage
     private let pixelSize: CGSize
     private var magnifierZoom: Int
+    private var imageZoom: CGFloat = 1.0
+    private var panOffset: CGPoint = .zero
     private var mouseLocation: CGPoint?
     private var coordinate: PixelCoordinate?
     private var trackingAreaReference: NSTrackingArea?
 
-    private var renderedImageRect: CGRect {
+    private var baseImageRect: CGRect {
         ImageGeometry.aspectFitRect(imageSize: pixelSize, in: bounds)
+    }
+
+    private var renderedImageRect: CGRect {
+        ImageGeometry.scaledImageRect(
+            baseFit: baseImageRect,
+            in: bounds,
+            zoom: imageZoom,
+            panOffset: panOffset
+        )
     }
 
     init(loadedImage: LoadedImage) {
@@ -139,6 +158,93 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
         needsDisplay = true
     }
 
+    @objc func zoomIn() {
+        applyZoomStep(by: 1, focusPoint: CGPoint(x: bounds.midX, y: bounds.midY))
+    }
+
+    @objc func zoomOut() {
+        applyZoomStep(by: -1, focusPoint: CGPoint(x: bounds.midX, y: bounds.midY))
+    }
+
+    @objc func resetZoom() {
+        applyZoom(Self.defaultImageZoom, focusPoint: CGPoint(x: bounds.midX, y: bounds.midY))
+    }
+
+    private func applyZoomStep(by delta: Int, focusPoint: CGPoint) {
+        let zoom: CGFloat?
+        if delta > 0 {
+            zoom = Self.imageZoomSteps.first { $0 > imageZoom }
+        } else if delta < 0 {
+            zoom = Self.imageZoomSteps.last { $0 < imageZoom }
+        } else {
+            zoom = nil
+        }
+
+        if let zoom {
+            applyZoom(zoom, focusPoint: focusPoint)
+        }
+    }
+
+    private func applyZoom(_ zoom: CGFloat, focusPoint: CGPoint) {
+        guard zoom != imageZoom else { return }
+        let newOffset = ImageGeometry.panOffsetForZoom(
+            fromZoom: imageZoom,
+            toZoom: zoom,
+            focusPoint: focusPoint,
+            baseFit: baseImageRect,
+            bounds: bounds,
+            oldPanOffset: panOffset
+        )
+        imageZoom = zoom
+        panOffset = newOffset
+        window?.invalidateCursorRects(for: self)
+        refreshCoordinateAfterTransform()
+    }
+
+    override func magnify(with event: NSEvent) {
+        let focusPoint = convert(event.locationInWindow, from: nil)
+        let zoom = min(
+            max(imageZoom + event.magnification, Self.minimumImageZoom),
+            Self.maximumImageZoom
+        )
+        applyZoom(zoom, focusPoint: focusPoint)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        // Only pan when the image is actually zoomed in; otherwise let macOS
+        // do whatever it wants with the event (e.g. nothing).
+        guard imageZoom > Self.defaultImageZoom else {
+            super.scrollWheel(with: event)
+            return
+        }
+
+        let deltaX: CGFloat
+        let deltaY: CGFloat
+        if event.hasPreciseScrollingDeltas {
+            deltaX = event.scrollingDeltaX
+            deltaY = event.scrollingDeltaY
+        } else {
+            deltaX = event.deltaX * 10
+            deltaY = event.deltaY * 10
+        }
+        guard deltaX != 0 || deltaY != 0 else {
+            super.scrollWheel(with: event)
+            return
+        }
+
+        // AppKit's scrolling deltas already respect the system's scroll-direction
+        // preference. Apply them directly so the image follows the fingers.
+        panOffset = ImageGeometry.clampPanOffset(
+            CGPoint(x: panOffset.x + deltaX, y: panOffset.y + deltaY),
+            bounds: bounds,
+            displayedSize: CGSize(
+                width: baseImageRect.width * imageZoom,
+                height: baseImageRect.height * imageZoom
+            )
+        )
+        refreshCoordinateAfterTransform()
+    }
+
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard menuItem.action == #selector(setMagnifierZoom(_:)) else {
             return true
@@ -156,6 +262,18 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
         super.setFrameSize(newSize)
         window?.invalidateCursorRects(for: self)
 
+        // Re-clamp the pan offset so a shrinking viewport can't leave the
+        // zoomed image permanently parked outside the visible area.
+        let displayedSize = CGSize(
+            width: baseImageRect.width * imageZoom,
+            height: baseImageRect.height * imageZoom
+        )
+        panOffset = ImageGeometry.clampPanOffset(
+            panOffset,
+            bounds: CGRect(origin: .zero, size: newSize),
+            displayedSize: displayedSize
+        )
+
         guard let window else { return }
         updateCoordinate(at: convert(window.mouseLocationOutsideOfEventStream, from: nil))
     }
@@ -171,15 +289,33 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
     }
 
     private func updateCoordinate(at location: CGPoint) {
+        guard bounds.contains(location) else {
+            mouseLocation = nil
+            coordinate = nil
+            needsDisplay = true
+            return
+        }
+
         let newCoordinate = ImageGeometry.pixelCoordinate(
             at: location,
             in: renderedImageRect,
             pixelSize: pixelSize
         )
 
-        mouseLocation = newCoordinate == nil ? nil : location
+        // Keep the pointer location while it remains inside the canvas. A pan
+        // can move the image out from under it and back again without another
+        // mouse-moved event being delivered.
+        mouseLocation = location
         coordinate = newCoordinate
         needsDisplay = true
+    }
+
+    private func refreshCoordinateAfterTransform() {
+        if let mouseLocation {
+            updateCoordinate(at: mouseLocation)
+        } else {
+            needsDisplay = true
+        }
     }
 
     private func drawGuideLines(at point: CGPoint, in imageRect: CGRect) {
