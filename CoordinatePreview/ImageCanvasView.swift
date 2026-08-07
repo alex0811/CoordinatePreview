@@ -14,7 +14,7 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
 
     /// Discrete image zoom steps. `1.0` is the "fit in window" default.
     private static let imageZoomSteps: [CGFloat] = [
-        0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 6.0
+        0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 6.0, 10.0
     ]
     private static let defaultImageZoom: CGFloat = 1.0
     private static let minimumImageZoom = imageZoomSteps[0]
