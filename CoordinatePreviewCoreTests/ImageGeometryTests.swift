@@ -380,6 +380,50 @@ struct ImageGeometryTests {
         #expect(abs(fromFocus.x - toFocus.x) < 0.001)
         #expect(abs(fromFocus.y - toFocus.y) < 0.001)
     }
+
+    @Test func renderedScaleExpandsZoomRangeForLongImage() {
+        let zoom = ImageGeometry.zoomForRenderedScale(
+            pointsPerPixel: 20,
+            baseFit: CGRect(x: 0, y: 0, width: 10, height: 500),
+            pixelSize: CGSize(width: 1000, height: 50_000)
+        )
+
+        // The long image is fitted at 1%, so rendering each source pixel at
+        // 20 points requires a 2000× fit-relative zoom.
+        #expect(abs((zoom ?? 0) - 2_000) < 0.001)
+    }
+
+    @Test func renderedScaleRejectsInvalidGeometry() {
+        let zoom = ImageGeometry.zoomForRenderedScale(
+            pointsPerPixel: 20,
+            baseFit: .zero,
+            pixelSize: CGSize(width: 1000, height: 50_000)
+        )
+
+        #expect(zoom == nil)
+    }
+
+    @Test func magnificationScalesProportionallyAtHighZoom() {
+        let zoom = ImageGeometry.zoomAfterMagnification(
+            currentZoom: 100,
+            magnification: 0.1,
+            minimumZoom: 0.25,
+            maximumZoom: 2_000
+        )
+
+        #expect(abs(zoom - 110) < 0.001)
+    }
+
+    @Test func magnificationClampsToDynamicMaximum() {
+        let zoom = ImageGeometry.zoomAfterMagnification(
+            currentZoom: 1_900,
+            magnification: 0.2,
+            minimumZoom: 0.25,
+            maximumZoom: 2_000
+        )
+
+        #expect(abs(zoom - 2_000) < 0.001)
+    }
 }
 
 private extension CGRect {

@@ -153,6 +153,50 @@ public enum ImageGeometry {
         )
     }
 
+    /// Converts a rendered points-per-source-pixel target into the zoom value
+    /// used by a view whose `1×` state is aspect-fit.
+    public static func zoomForRenderedScale(
+        pointsPerPixel: CGFloat,
+        baseFit: CGRect,
+        pixelSize: CGSize
+    ) -> CGFloat? {
+        guard pointsPerPixel > 0,
+              baseFit.width > 0,
+              baseFit.height > 0,
+              pixelSize.width > 0,
+              pixelSize.height > 0 else {
+            return nil
+        }
+
+        let fitScale = min(
+            baseFit.width / pixelSize.width,
+            baseFit.height / pixelSize.height
+        )
+        guard fitScale.isFinite, fitScale > 0 else { return nil }
+
+        let zoom = pointsPerPixel / fitScale
+        return zoom.isFinite ? zoom : nil
+    }
+
+    /// Applies AppKit's magnification delta as a scale factor and clamps it to
+    /// the supported zoom range.
+    public static func zoomAfterMagnification(
+        currentZoom: CGFloat,
+        magnification: CGFloat,
+        minimumZoom: CGFloat,
+        maximumZoom: CGFloat
+    ) -> CGFloat {
+        guard currentZoom.isFinite,
+              magnification.isFinite,
+              minimumZoom > 0,
+              maximumZoom >= minimumZoom else {
+            return currentZoom
+        }
+
+        let scaleFactor = max(0, 1 + magnification)
+        return min(max(currentZoom * scaleFactor, minimumZoom), maximumZoom)
+    }
+
     public static func pixelCoordinate(
         at point: CGPoint,
         in imageRect: CGRect,

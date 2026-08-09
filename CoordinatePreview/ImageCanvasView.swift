@@ -12,13 +12,16 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
     private static let magnifierZoomDefaultsKey = "MagnifierZoom"
     private static let magnifierPreviewSide: CGFloat = 132
 
-    /// Discrete image zoom steps. `1.0` is the "fit in window" default.
+    /// Base discrete zoom steps. `1.0` is the "fit in window" default. Extra
+    /// steps are appended dynamically when a long image needs more zoom to
+    /// reach the rendered points-per-source-pixel limit.
     private static let imageZoomSteps: [CGFloat] = [
-        0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 6.0, 10.0
+        0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 6.0, 10.0, 20.0
     ]
     private static let defaultImageZoom: CGFloat = 1.0
     private static let minimumImageZoom = imageZoomSteps[0]
-    private static let maximumImageZoom = imageZoomSteps[imageZoomSteps.count - 1]
+    private static let minimumMaximumImageZoom = imageZoomSteps[imageZoomSteps.count - 1]
+    private static let maximumRenderedPointsPerPixel: CGFloat = 20
 
     private let image: NSImage
     private let pixelSize: CGSize
@@ -40,6 +43,32 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
             zoom: imageZoom,
             panOffset: panOffset
         )
+    }
+
+    /// Keep the existing 20× fit-relative capability, but let very tall images
+    /// continue to 20 rendered points per source pixel. A 2%-fit long image,
+    /// for example, can therefore reach a relative zoom of 1000×.
+    private var maximumImageZoom: CGFloat {
+        let renderedScaleZoom = ImageGeometry.zoomForRenderedScale(
+            pointsPerPixel: Self.maximumRenderedPointsPerPixel,
+            baseFit: baseImageRect,
+            pixelSize: pixelSize
+        ) ?? Self.minimumMaximumImageZoom
+        return max(Self.minimumMaximumImageZoom, renderedScaleZoom)
+    }
+
+    private var availableImageZoomSteps: [CGFloat] {
+        let maximumZoom = maximumImageZoom
+        var steps = Self.imageZoomSteps
+        var lastZoom = steps[steps.count - 1]
+
+        while lastZoom < maximumZoom {
+            let nextZoom = min(lastZoom * 2, maximumZoom)
+            guard nextZoom > lastZoom else { break }
+            steps.append(nextZoom)
+            lastZoom = nextZoom
+        }
+        return steps
     }
 
     init(loadedImage: LoadedImage) {
@@ -171,11 +200,12 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
     }
 
     private func applyZoomStep(by delta: Int, focusPoint: CGPoint) {
+        let steps = availableImageZoomSteps
         let zoom: CGFloat?
         if delta > 0 {
-            zoom = Self.imageZoomSteps.first { $0 > imageZoom }
+            zoom = steps.first { $0 > imageZoom }
         } else if delta < 0 {
-            zoom = Self.imageZoomSteps.last { $0 < imageZoom }
+            zoom = steps.last { $0 < imageZoom }
         } else {
             zoom = nil
         }
@@ -186,6 +216,7 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
     }
 
     private func applyZoom(_ zoom: CGFloat, focusPoint: CGPoint) {
+        let zoom = min(max(zoom, Self.minimumImageZoom), maximumImageZoom)
         guard zoom != imageZoom else { return }
         let newOffset = ImageGeometry.panOffsetForZoom(
             fromZoom: imageZoom,
@@ -203,9 +234,11 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
 
     override func magnify(with event: NSEvent) {
         let focusPoint = convert(event.locationInWindow, from: nil)
-        let zoom = min(
-            max(imageZoom + event.magnification, Self.minimumImageZoom),
-            Self.maximumImageZoom
+        let zoom = ImageGeometry.zoomAfterMagnification(
+            currentZoom: imageZoom,
+            magnification: event.magnification,
+            minimumZoom: Self.minimumImageZoom,
+            maximumZoom: maximumImageZoom
         )
         applyZoom(zoom, focusPoint: focusPoint)
     }
