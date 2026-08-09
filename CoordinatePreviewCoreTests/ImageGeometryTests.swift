@@ -387,6 +387,38 @@ struct ImageGeometryTests {
         )
     }
 
+    @Test func fitWidthZoomExpandsTallImageToAvailableWidth() {
+        let zoom = ImageGeometry.zoomToFitWidth(
+            baseFit: CGRect(x: 450, y: 24, width: 100, height: 752),
+            bounds: CGRect(x: 0, y: 0, width: 1000, height: 800)
+        )
+
+        #expect(abs((zoom ?? 0) - 9.52) < 0.001)
+    }
+
+    @Test func fitWidthZoomKeepsWidthFittedImageAtOne() {
+        let zoom = ImageGeometry.zoomToFitWidth(
+            baseFit: CGRect(x: 24, y: 200, width: 952, height: 400),
+            bounds: CGRect(x: 0, y: 0, width: 1000, height: 800)
+        )
+
+        #expect(abs((zoom ?? 0) - 1) < 0.001)
+    }
+
+    @Test func convertsAppKitPointToDisplayLocalCursorPoint() {
+        let primaryPoint = ImageGeometry.displayLocalCursorPoint(
+            appKitScreenPoint: CGPoint(x: 100, y: 980),
+            screenFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        )
+        let secondaryPoint = ImageGeometry.displayLocalCursorPoint(
+            appKitScreenPoint: CGPoint(x: -1000, y: 700),
+            screenFrame: CGRect(x: -1440, y: 0, width: 1440, height: 900)
+        )
+
+        #expect(primaryPoint == CGPoint(x: 100, y: 100))
+        #expect(secondaryPoint == CGPoint(x: 440, y: 200))
+    }
+
     @Test func zoomKeepsCenteredFocusPointStable() {
         let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
         let baseFit = ImageGeometry.aspectFitRect(

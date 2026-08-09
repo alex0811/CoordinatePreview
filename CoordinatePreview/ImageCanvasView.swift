@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import UniformTypeIdentifiers
 
 final class ImageCanvasView: NSView, NSMenuItemValidation {
@@ -16,6 +17,7 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
     private static let defaultMagnifierZoom = 12
     private static let magnifierZoomDefaultsKey = "MagnifierZoom"
     private static let magnifierPreviewSide: CGFloat = 132
+    private static let imagePadding: CGFloat = 24
 
     /// Base discrete zoom steps. `1.0` is the "fit in window" default. Extra
     /// steps are appended dynamically when a long image needs more zoom to
@@ -35,7 +37,7 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
     private var panOffset: CGPoint = .zero
     private var mouseLocation: CGPoint?
     private var coordinate: PixelCoordinate?
-    private var jumpedPixelY: Int?
+    private var jumpedCoordinate: PixelCoordinate?
     private var trackingAreaReference: NSTrackingArea?
 
     var pixelYRange: ClosedRange<Int>? {
@@ -44,7 +46,11 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
     }
 
     private var baseImageRect: CGRect {
-        ImageGeometry.aspectFitRect(imageSize: pixelSize, in: bounds)
+        ImageGeometry.aspectFitRect(
+            imageSize: pixelSize,
+            in: bounds,
+            padding: Self.imagePadding
+        )
     }
 
     private var renderedImageRect: CGRect {
@@ -131,31 +137,22 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
             hints: nil
         )
 
-        if let jumpedPixelY,
-           let linePoint = ImageGeometry.centerPoint(
-               of: PixelCoordinate(x: 0, y: jumpedPixelY),
-               in: imageRect,
-               pixelSize: pixelSize
-           ) {
-            drawJumpGuideLine(atY: linePoint.y, in: imageRect)
-        }
-
-        if let mouseLocation, let coordinate {
-            drawGuideLines(at: mouseLocation, in: imageRect)
-            drawCrosshair(at: mouseLocation)
-            drawMagnifier(for: coordinate, beside: mouseLocation)
+        if let selection = displayedSelection(in: imageRect) {
+            drawGuideLines(at: selection.location, in: imageRect)
+            drawCrosshair(at: selection.location)
+            drawMagnifier(for: selection.coordinate, beside: selection.location)
         }
     }
 
     override func mouseMoved(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        jumpedPixelY = nil
+        jumpedCoordinate = nil
         updateCoordinate(at: convert(event.locationInWindow, from: nil))
     }
 
     override func mouseEntered(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        jumpedPixelY = nil
+        jumpedCoordinate = nil
         updateCoordinate(at: convert(event.locationInWindow, from: nil))
     }
 
@@ -181,9 +178,9 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
             return
         }
 
-        guard let coordinate,
+        guard let selectedCoordinate = coordinate ?? jumpedCoordinate,
               let adjustedCoordinate = ImageGeometry.offsetPixelCoordinate(
-                coordinate,
+                selectedCoordinate,
                 deltaX: delta.x,
                 deltaY: delta.y,
                 pixelSize: pixelSize
@@ -197,8 +194,12 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
             return
         }
 
-        self.coordinate = adjustedCoordinate
-        mouseLocation = adjustedLocation
+        if jumpedCoordinate != nil {
+            jumpedCoordinate = adjustedCoordinate
+        } else {
+            coordinate = adjustedCoordinate
+            mouseLocation = adjustedLocation
+        }
         needsDisplay = true
     }
 
@@ -222,23 +223,67 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
     }
 
     func jump(toPixelY pixelY: Int) {
+        let retainedPixelX = coordinate?.x ?? jumpedCoordinate?.x
         guard let pixelYRange,
-              pixelYRange.contains(pixelY),
-              let newOffset = ImageGeometry.panOffsetCentering(
-                  pixelY: pixelY,
-                  pixelHeight: pixelYRange.upperBound + 1,
-                  baseFit: baseImageRect,
-                  bounds: bounds,
-                  zoom: imageZoom,
-                  currentPanOffset: panOffset
-              ) else {
+              pixelYRange.contains(pixelY) else {
+            return
+        }
+
+        if let fitWidthZoom = ImageGeometry.zoomToFitWidth(
+            baseFit: baseImageRect,
+            bounds: bounds,
+            padding: Self.imagePadding
+        ), fitWidthZoom > imageZoom {
+            applyZoom(fitWidthZoom, focusPoint: CGPoint(x: bounds.midX, y: bounds.midY))
+        }
+
+        guard let newOffset = ImageGeometry.panOffsetCentering(
+            pixelY: pixelY,
+            pixelHeight: pixelYRange.upperBound + 1,
+            baseFit: baseImageRect,
+            bounds: bounds,
+            zoom: imageZoom,
+            currentPanOffset: panOffset
+        ) else {
             return
         }
 
         panOffset = newOffset
-        jumpedPixelY = pixelY
+        let imageRect = renderedImageRect
+        let visibleImageRect = imageRect.intersection(bounds)
+        let fallbackCoordinate: PixelCoordinate?
+        if !visibleImageRect.isNull,
+           visibleImageRect.width > 0,
+           let rowCenter = ImageGeometry.centerPoint(
+               of: PixelCoordinate(x: 0, y: pixelY),
+               in: imageRect,
+               pixelSize: pixelSize
+           ) {
+            fallbackCoordinate = ImageGeometry.pixelCoordinate(
+                at: CGPoint(x: visibleImageRect.midX, y: rowCenter.y),
+                in: imageRect,
+                pixelSize: pixelSize
+            )
+        } else {
+            fallbackCoordinate = nil
+        }
+
+        guard let pixelX = retainedPixelX ?? fallbackCoordinate?.x else {
+            needsDisplay = true
+            return
+        }
+
+        let targetCoordinate = PixelCoordinate(x: pixelX, y: pixelY)
+        jumpedCoordinate = targetCoordinate
         mouseLocation = nil
         coordinate = nil
+        if let location = ImageGeometry.centerPoint(
+            of: targetCoordinate,
+            in: imageRect,
+            pixelSize: pixelSize
+        ) {
+            moveMouseCursor(to: location)
+        }
         needsDisplay = true
     }
 
@@ -395,6 +440,49 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
         }
     }
 
+    private func displayedSelection(
+        in imageRect: CGRect
+    ) -> (coordinate: PixelCoordinate, location: CGPoint)? {
+        if let mouseLocation, let coordinate {
+            return (coordinate, mouseLocation)
+        }
+
+        guard let jumpedCoordinate,
+              let location = ImageGeometry.centerPoint(
+                  of: jumpedCoordinate,
+                  in: imageRect,
+                  pixelSize: pixelSize
+              ) else {
+            return nil
+        }
+        return (jumpedCoordinate, location)
+    }
+
+    private func moveMouseCursor(to location: CGPoint) {
+        guard let window else { return }
+        let windowPoint = convert(location, to: nil)
+        let screenPoint = window.convertPoint(toScreen: windowPoint)
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(screenPoint) })
+                ?? window.screen,
+              let displayNumber = screen.deviceDescription[
+                  NSDeviceDescriptionKey("NSScreenNumber")
+              ] as? NSNumber,
+              let displayPoint = ImageGeometry.displayLocalCursorPoint(
+                  appKitScreenPoint: screenPoint,
+                  screenFrame: screen.frame
+              ) else {
+            return
+        }
+
+        let result = CGDisplayMoveCursorToPoint(
+            CGDirectDisplayID(displayNumber.uint32Value),
+            displayPoint
+        )
+        if result == .success {
+            NSCursor.crosshair.set()
+        }
+    }
+
     private func drawGuideLines(at point: CGPoint, in imageRect: CGRect) {
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: imageRect).addClip()
@@ -412,26 +500,6 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
         path.stroke()
 
         NSColor.white.withAlphaComponent(0.85).setStroke()
-        path.lineWidth = 1
-        path.stroke()
-
-        NSGraphicsContext.restoreGraphicsState()
-    }
-
-    private func drawJumpGuideLine(atY y: CGFloat, in imageRect: CGRect) {
-        NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(rect: imageRect).addClip()
-
-        let path = NSBezierPath()
-        path.move(to: CGPoint(x: imageRect.minX, y: y))
-        path.line(to: CGPoint(x: imageRect.maxX, y: y))
-        path.setLineDash([7, 4], count: 2, phase: 0)
-
-        NSColor.black.withAlphaComponent(0.7).setStroke()
-        path.lineWidth = 3
-        path.stroke()
-
-        NSColor.systemYellow.setStroke()
         path.lineWidth = 1
         path.stroke()
 

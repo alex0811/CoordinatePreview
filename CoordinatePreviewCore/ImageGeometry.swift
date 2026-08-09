@@ -197,6 +197,42 @@ public enum ImageGeometry {
         )
     }
 
+    /// Returns the fit-relative zoom needed to expand `baseFit` to the
+    /// viewport's available width while retaining the same outer padding.
+    public static func zoomToFitWidth(
+        baseFit: CGRect,
+        bounds: CGRect,
+        padding: CGFloat = 24
+    ) -> CGFloat? {
+        let availableWidth = bounds.width - padding * 2
+        guard baseFit.width > 0,
+              availableWidth > 0 else {
+            return nil
+        }
+
+        let zoom = availableWidth / baseFit.width
+        return zoom.isFinite && zoom > 0 ? zoom : nil
+    }
+
+    /// Converts AppKit's global, bottom-left-origin screen coordinates to the
+    /// upper-left-origin coordinates expected by `CGDisplayMoveCursorToPoint`.
+    public static func displayLocalCursorPoint(
+        appKitScreenPoint: CGPoint,
+        screenFrame: CGRect
+    ) -> CGPoint? {
+        guard appKitScreenPoint.x.isFinite,
+              appKitScreenPoint.y.isFinite,
+              screenFrame.width > 0,
+              screenFrame.height > 0 else {
+            return nil
+        }
+
+        return CGPoint(
+            x: appKitScreenPoint.x - screenFrame.minX,
+            y: screenFrame.maxY - appKitScreenPoint.y
+        )
+    }
+
     /// Converts a rendered points-per-source-pixel target into the zoom value
     /// used by a view whose `1×` state is aspect-fit.
     public static func zoomForRenderedScale(
