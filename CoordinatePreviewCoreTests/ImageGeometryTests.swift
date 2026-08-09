@@ -296,6 +296,97 @@ struct ImageGeometryTests {
         #expect(abs(clamped.y) < 0.001)
     }
 
+    @Test func jumpCentersSourcePixelRowAndPreservesHorizontalPan() {
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let baseFit = CGRect(x: 250, y: 25, width: 500, height: 750)
+        let offset = ImageGeometry.panOffsetCentering(
+            pixelY: 600,
+            pixelHeight: 1000,
+            baseFit: baseFit,
+            bounds: bounds,
+            zoom: 4,
+            currentPanOffset: CGPoint(x: 250, y: 400)
+        )
+
+        let displayed = ImageGeometry.scaledImageRect(
+            baseFit: baseFit,
+            in: bounds,
+            zoom: 4,
+            panOffset: offset ?? .zero
+        )
+        let rowCenterY = displayed.minY + 600.5 / 1000 * displayed.height
+
+        #expect(abs((offset?.x ?? 0) - 250) < 0.001)
+        #expect(abs(rowCenterY - bounds.midY) < 0.001)
+    }
+
+    @Test func jumpClampsRowsNearImageEdges() {
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let baseFit = CGRect(x: 250, y: 25, width: 500, height: 750)
+
+        let topOffset = ImageGeometry.panOffsetCentering(
+            pixelY: 0,
+            pixelHeight: 1000,
+            baseFit: baseFit,
+            bounds: bounds,
+            zoom: 4,
+            currentPanOffset: .zero
+        )
+        let bottomOffset = ImageGeometry.panOffsetCentering(
+            pixelY: 999,
+            pixelHeight: 1000,
+            baseFit: baseFit,
+            bounds: bounds,
+            zoom: 4,
+            currentPanOffset: .zero
+        )
+
+        #expect(abs((topOffset?.y ?? 0) - 1100) < 0.001)
+        #expect(abs((bottomOffset?.y ?? 0) + 1100) < 0.001)
+    }
+
+    @Test func jumpDoesNotPanWhenImageFitsInViewport() {
+        let offset = ImageGeometry.panOffsetCentering(
+            pixelY: 250,
+            pixelHeight: 1000,
+            baseFit: CGRect(x: 450, y: 25, width: 100, height: 750),
+            bounds: CGRect(x: 0, y: 0, width: 1000, height: 800),
+            zoom: 1,
+            currentPanOffset: CGPoint(x: 100, y: 100)
+        )
+
+        #expect(offset == .zero)
+    }
+
+    @Test func jumpRejectsPixelRowsOutsideTheImage() {
+        let arguments = (
+            pixelHeight: 1000,
+            baseFit: CGRect(x: 450, y: 25, width: 100, height: 750),
+            bounds: CGRect(x: 0, y: 0, width: 1000, height: 800)
+        )
+
+        #expect(
+            ImageGeometry.panOffsetCentering(
+                pixelY: -1,
+                pixelHeight: arguments.pixelHeight,
+                baseFit: arguments.baseFit,
+                bounds: arguments.bounds,
+                zoom: 1,
+                currentPanOffset: .zero
+            ) == nil
+        )
+        #expect(
+            ImageGeometry.panOffsetCentering(
+                pixelY: 1000,
+                pixelHeight: arguments.pixelHeight,
+                baseFit: arguments.baseFit,
+                bounds: arguments.bounds,
+                zoom: 1,
+                currentPanOffset: .zero
+            ) == nil
+        )
+    }
+
     @Test func zoomKeepsCenteredFocusPointStable() {
         let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
         let baseFit = ImageGeometry.aspectFitRect(

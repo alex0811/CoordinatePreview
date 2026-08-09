@@ -153,6 +153,50 @@ public enum ImageGeometry {
         )
     }
 
+    /// Computes a pan offset that places the center of a source pixel row at
+    /// the vertical center of the viewport whenever the image overhang allows
+    /// it. The current horizontal offset is preserved and both axes are
+    /// clamped to the valid panning range.
+    public static func panOffsetCentering(
+        pixelY: Int,
+        pixelHeight: Int,
+        baseFit: CGRect,
+        bounds: CGRect,
+        zoom: CGFloat,
+        currentPanOffset: CGPoint
+    ) -> CGPoint? {
+        guard pixelHeight > 0,
+              pixelY >= 0,
+              pixelY < pixelHeight,
+              zoom.isFinite,
+              zoom > 0,
+              baseFit.width > 0,
+              baseFit.height > 0,
+              bounds.width > 0,
+              bounds.height > 0 else {
+            return nil
+        }
+
+        let displayedAtZero = scaledImageRect(
+            baseFit: baseFit,
+            in: bounds,
+            zoom: zoom,
+            panOffset: .zero
+        )
+        let normalizedY = (CGFloat(pixelY) + 0.5) / CGFloat(pixelHeight)
+        let rowCenterY = displayedAtZero.minY + normalizedY * displayedAtZero.height
+        let requestedOffset = CGPoint(
+            x: currentPanOffset.x,
+            y: bounds.midY - rowCenterY
+        )
+
+        return clampPanOffset(
+            requestedOffset,
+            bounds: bounds,
+            displayedSize: displayedAtZero.size
+        )
+    }
+
     /// Converts a rendered points-per-source-pixel target into the zoom value
     /// used by a view whose `1×` state is aspect-fit.
     public static func zoomForRenderedScale(

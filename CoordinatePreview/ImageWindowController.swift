@@ -9,6 +9,7 @@ final class ImageWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private let imageView: ImageCanvasView
+    private var toolbar: ZoomToolbar?
     private static let toolbarHeight: CGFloat = 40
 
     init(imageURL: URL) throws {
@@ -31,7 +32,9 @@ final class ImageWindowController: NSWindowController, NSWindowDelegate {
         content.frame = CGRect(origin: .zero, size: CGSize(width: preferredWidth, height: preferredHeight))
         content.autoresizingMask = [.width, .height]
         content.imageView = imageView
-        content.toolbar = makeToolbar()
+        let toolbar = makeToolbar()
+        self.toolbar = toolbar
+        content.toolbar = toolbar
 
         window.title = imageURL.lastPathComponent
         window.contentView = content
@@ -55,12 +58,17 @@ final class ImageWindowController: NSWindowController, NSWindowDelegate {
         onClose?()
     }
 
+    func focusJumpToYInput() {
+        toolbar?.focusJumpToYInput()
+    }
+
     private func makeToolbar() -> ZoomToolbar {
         let toolbar = ZoomToolbar(frame: NSRect(x: 0, y: 0, width: 0, height: Self.toolbarHeight))
         toolbar.zoomOutTarget = imageView
         toolbar.zoomInTarget = imageView
         toolbar.resetTarget = imageView
         toolbar.imageDropTarget = imageView
+        toolbar.jumpYTarget = imageView
         imageView.onImageZoomChange = { [weak toolbar] zoom in
             toolbar?.updateZoom(zoom)
         }
@@ -123,14 +131,20 @@ private final class ContentView: NSView {
 
 /// Top strip with a native macOS zoom segmented control, centered horizontally.
 /// All frame-based (matches the rest of the app's non-constraint style).
-private final class ZoomToolbar: NSVisualEffectView {
+private final class ZoomToolbar: NSVisualEffectView, NSTextFieldDelegate {
     var zoomOutTarget: AnyObject?
     var zoomInTarget: AnyObject?
     var resetTarget: AnyObject?
     var imageDropTarget: ImageCanvasView?
+    var jumpYTarget: ImageCanvasView? {
+        didSet { updateJumpYHint() }
+    }
 
     private let zoomControl: NSSegmentedControl
     private let separator = NSBox()
+    private let jumpYLabel = NSTextField(labelWithString: "y:")
+    private let jumpYField = NSTextField()
+    private var lastAcceptedValue = ""
 
     override init(frame frameRect: NSRect) {
         zoomControl = NSSegmentedControl(
@@ -149,6 +163,10 @@ private final class ZoomToolbar: NSVisualEffectView {
         configureZoomControl()
         addSubview(zoomControl)
 
+        configureJumpYControl()
+        addSubview(jumpYLabel)
+        addSubview(jumpYField)
+
         separator.boxType = .separator
         addSubview(separator)
     }
@@ -166,7 +184,35 @@ private final class ZoomToolbar: NSVisualEffectView {
             x: floor((bounds.width - zoomControl.frame.width) / 2),
             y: floor((bounds.height - zoomControl.frame.height) / 2)
         )
+
+        jumpYLabel.sizeToFit()
+        let fieldSize = CGSize(width: 82, height: 22)
+        let spacing: CGFloat = 4
+        let trailing: CGFloat = 12
+        let groupWidth = jumpYLabel.frame.width + spacing + fieldSize.width
+        let groupX = bounds.maxX - trailing - groupWidth
+        jumpYLabel.frame.origin = CGPoint(
+            x: groupX,
+            y: floor((bounds.height - jumpYLabel.frame.height) / 2)
+        )
+        jumpYField.frame = CGRect(
+            x: jumpYLabel.frame.maxX + spacing,
+            y: floor((bounds.height - fieldSize.height) / 2),
+            width: fieldSize.width,
+            height: fieldSize.height
+        )
         separator.frame = NSRect(x: 0, y: 0, width: bounds.width, height: 1)
+    }
+
+    func focusJumpToYInput() {
+        guard jumpYTarget?.pixelYRange != nil else {
+            NSSound.beep()
+            return
+        }
+
+        clearJumpYError()
+        window?.makeFirstResponder(jumpYField)
+        jumpYField.selectText(nil)
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -197,6 +243,86 @@ private final class ZoomToolbar: NSVisualEffectView {
         zoomControl.setImageScaling(.scaleProportionallyDown, forSegment: 2)
         zoomControl.setWidth(34, forSegment: 2)
         zoomControl.setToolTip("放大", forSegment: 2)
+    }
+
+    private func configureJumpYControl() {
+        jumpYLabel.font = NSFont.systemFont(ofSize: 12)
+        jumpYLabel.textColor = .secondaryLabelColor
+
+        jumpYField.controlSize = .small
+        jumpYField.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        jumpYField.alignment = .right
+        jumpYField.focusRingType = .exterior
+        jumpYField.delegate = self
+        jumpYField.target = self
+        jumpYField.action = #selector(submitJumpY(_:))
+        jumpYField.setAccessibilityLabel("跳转到纵坐标 y")
+    }
+
+    private func updateJumpYHint() {
+        guard let range = jumpYTarget?.pixelYRange else {
+            jumpYField.placeholderString = nil
+            jumpYField.toolTip = nil
+            jumpYField.isEnabled = false
+            return
+        }
+
+        let rangeDescription = "\(range.lowerBound)–\(range.upperBound)"
+        jumpYField.placeholderString = rangeDescription
+        jumpYField.toolTip = "输入原图纵坐标（\(rangeDescription)），按回车跳转"
+        jumpYField.isEnabled = true
+    }
+
+    @objc private func submitJumpY(_ sender: NSTextField) {
+        let input = sender.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let range = jumpYTarget?.pixelYRange,
+              let pixelY = Int(input),
+              range.contains(pixelY) else {
+            showJumpYError()
+            return
+        }
+
+        clearJumpYError()
+        sender.stringValue = String(pixelY)
+        lastAcceptedValue = sender.stringValue
+        jumpYTarget?.jump(toPixelY: pixelY)
+        window?.makeFirstResponder(jumpYTarget)
+    }
+
+    func controlTextDidChange(_ notification: Notification) {
+        clearJumpYError()
+    }
+
+    func control(
+        _ control: NSControl,
+        textView: NSTextView,
+        doCommandBy commandSelector: Selector
+    ) -> Bool {
+        guard control === jumpYField,
+              commandSelector == #selector(NSResponder.cancelOperation(_:)) else {
+            return false
+        }
+
+        jumpYField.stringValue = lastAcceptedValue
+        clearJumpYError()
+        window?.makeFirstResponder(jumpYTarget)
+        return true
+    }
+
+    private func showJumpYError() {
+        guard let range = jumpYTarget?.pixelYRange else { return }
+        jumpYField.textColor = .systemRed
+        jumpYField.toolTip = "请输入 \(range.lowerBound)–\(range.upperBound) 之间的整数"
+        jumpYField.setAccessibilityHelp(jumpYField.toolTip)
+        window?.makeFirstResponder(jumpYField)
+        jumpYField.selectText(nil)
+        NSSound.beep()
+    }
+
+    private func clearJumpYError() {
+        jumpYField.textColor = .controlTextColor
+        jumpYField.setAccessibilityHelp(nil)
+        updateJumpYHint()
     }
 
     private static func symbol(named name: String, description: String) -> NSImage? {

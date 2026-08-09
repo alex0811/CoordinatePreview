@@ -50,6 +50,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.urls.forEach(openImage(at:))
     }
 
+    @MainActor @objc private func focusJumpToY(_ sender: Any?) {
+        let activeWindow = NSApp.keyWindow ?? NSApp.mainWindow
+        windowControllers
+            .first { $0.window === activeWindow }?
+            .focusJumpToYInput()
+    }
+
     private func openImage(at url: URL) {
         do {
             let controller = try ImageWindowController(imageURL: url)
@@ -118,6 +125,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         magnifierZoomItem.submenu = magnifierZoomMenu
         viewMenu.addItem(magnifierZoomItem)
+        viewMenu.addItem(.separator())
+        let jumpToYItem = NSMenuItem(
+            title: "跳转到 Y…",
+            action: #selector(focusJumpToY(_:)),
+            keyEquivalent: "l"
+        )
+        jumpToYItem.target = self
+        viewMenu.addItem(jumpToYItem)
         viewMenuItem.submenu = viewMenu
         mainMenu.addItem(viewMenuItem)
 

@@ -35,7 +35,13 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
     private var panOffset: CGPoint = .zero
     private var mouseLocation: CGPoint?
     private var coordinate: PixelCoordinate?
+    private var jumpedPixelY: Int?
     private var trackingAreaReference: NSTrackingArea?
+
+    var pixelYRange: ClosedRange<Int>? {
+        let pixelHeight = Int(pixelSize.height.rounded())
+        return pixelHeight > 0 ? 0...(pixelHeight - 1) : nil
+    }
 
     private var baseImageRect: CGRect {
         ImageGeometry.aspectFitRect(imageSize: pixelSize, in: bounds)
@@ -125,6 +131,15 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
             hints: nil
         )
 
+        if let jumpedPixelY,
+           let linePoint = ImageGeometry.centerPoint(
+               of: PixelCoordinate(x: 0, y: jumpedPixelY),
+               in: imageRect,
+               pixelSize: pixelSize
+           ) {
+            drawJumpGuideLine(atY: linePoint.y, in: imageRect)
+        }
+
         if let mouseLocation, let coordinate {
             drawGuideLines(at: mouseLocation, in: imageRect)
             drawCrosshair(at: mouseLocation)
@@ -134,11 +149,13 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
 
     override func mouseMoved(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        jumpedPixelY = nil
         updateCoordinate(at: convert(event.locationInWindow, from: nil))
     }
 
     override func mouseEntered(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        jumpedPixelY = nil
         updateCoordinate(at: convert(event.locationInWindow, from: nil))
     }
 
@@ -202,6 +219,27 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
 
     @objc func resetZoom() {
         applyZoom(Self.defaultImageZoom, focusPoint: CGPoint(x: bounds.midX, y: bounds.midY))
+    }
+
+    func jump(toPixelY pixelY: Int) {
+        guard let pixelYRange,
+              pixelYRange.contains(pixelY),
+              let newOffset = ImageGeometry.panOffsetCentering(
+                  pixelY: pixelY,
+                  pixelHeight: pixelYRange.upperBound + 1,
+                  baseFit: baseImageRect,
+                  bounds: bounds,
+                  zoom: imageZoom,
+                  currentPanOffset: panOffset
+              ) else {
+            return
+        }
+
+        panOffset = newOffset
+        jumpedPixelY = pixelY
+        mouseLocation = nil
+        coordinate = nil
+        needsDisplay = true
     }
 
     private func applyZoomStep(by delta: Int, focusPoint: CGPoint) {
@@ -374,6 +412,26 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
         path.stroke()
 
         NSColor.white.withAlphaComponent(0.85).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private func drawJumpGuideLine(atY y: CGFloat, in imageRect: CGRect) {
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: imageRect).addClip()
+
+        let path = NSBezierPath()
+        path.move(to: CGPoint(x: imageRect.minX, y: y))
+        path.line(to: CGPoint(x: imageRect.maxX, y: y))
+        path.setLineDash([7, 4], count: 2, phase: 0)
+
+        NSColor.black.withAlphaComponent(0.7).setStroke()
+        path.lineWidth = 3
+        path.stroke()
+
+        NSColor.systemYellow.setStroke()
         path.lineWidth = 1
         path.stroke()
 
