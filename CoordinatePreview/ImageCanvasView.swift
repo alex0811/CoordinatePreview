@@ -3,6 +3,11 @@ import UniformTypeIdentifiers
 
 final class ImageCanvasView: NSView, NSMenuItemValidation {
     var onOpenImage: ((URL) -> Void)?
+    var onImageZoomChange: ((CGFloat) -> Void)? {
+        didSet {
+            onImageZoomChange?(imageZoom)
+        }
+    }
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -228,6 +233,7 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
         )
         imageZoom = zoom
         panOffset = newOffset
+        onImageZoomChange?(imageZoom)
         window?.invalidateCursorRects(for: self)
         refreshCoordinateAfterTransform()
     }

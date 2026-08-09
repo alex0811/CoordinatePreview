@@ -61,6 +61,9 @@ final class ImageWindowController: NSWindowController, NSWindowDelegate {
         toolbar.zoomInTarget = imageView
         toolbar.resetTarget = imageView
         toolbar.imageDropTarget = imageView
+        imageView.onImageZoomChange = { [weak toolbar] zoom in
+            toolbar?.updateZoom(zoom)
+        }
         return toolbar
     }
 }
@@ -187,8 +190,8 @@ private final class ZoomToolbar: NSVisualEffectView {
         zoomControl.setWidth(34, forSegment: 0)
         zoomControl.setToolTip("缩小", forSegment: 0)
 
-        zoomControl.setWidth(44, forSegment: 1)
-        zoomControl.setToolTip("恢复为适合窗口", forSegment: 1)
+        zoomControl.setWidth(62, forSegment: 1)
+        updateZoom(1)
 
         zoomControl.setImage(Self.symbol(named: "plus.magnifyingglass", description: "放大"), forSegment: 2)
         zoomControl.setImageScaling(.scaleProportionallyDown, forSegment: 2)
@@ -201,6 +204,35 @@ private final class ZoomToolbar: NSVisualEffectView {
             systemSymbolName: name,
             accessibilityDescription: description
         )?.withSymbolConfiguration(.init(pointSize: 12, weight: .medium))
+    }
+
+    func updateZoom(_ zoom: CGFloat) {
+        let label = Self.zoomLabel(for: zoom)
+        zoomControl.setLabel(label, forSegment: 1)
+        zoomControl.setToolTip("当前倍率 \(label)，点按恢复为适合窗口", forSegment: 1)
+        zoomControl.setAccessibilityLabel("图片缩放，当前倍率 \(label)")
+    }
+
+    private static func zoomLabel(for zoom: CGFloat) -> String {
+        let fractionDigits: Int
+        switch zoom {
+        case ..<10:
+            fractionDigits = 2
+        case ..<100:
+            fractionDigits = 1
+        default:
+            fractionDigits = 0
+        }
+
+        var number = String(format: "%.*f", fractionDigits, zoom)
+        if number.contains(".") {
+            number = number.replacingOccurrences(
+                of: #"\.?0+$"#,
+                with: "",
+                options: .regularExpression
+            )
+        }
+        return "\(number)×"
     }
 
     @objc private func performZoomAction(_ sender: NSSegmentedControl) {
