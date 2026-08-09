@@ -19,11 +19,27 @@
 
 ## 构建和使用
 
-1. 用 Xcode 打开 `CoordinatePreview.xcodeproj`。
-2. 选择 `CoordinatePreview` scheme，运行或 Archive。
-3. 在 Finder 中右键一张图片，选择“显示简介”。
-4. 在“打开方式”中选择 `Coordinate Preview`；若希望图片以后都由它打开，再点“全部更改…”。
-5. 此后双击图片即可显示坐标查看器。
+运行安装脚本，会构建当前代码、把最新 App 安装到固定的
+`~/Applications/CoordinatePreview.app`，并刷新 Finder 的“打开方式”注册：
+
+```sh
+./scripts/build-and-install.sh
+```
+
+随后在 Finder 中右键一张图片，选择“打开方式 > Coordinate Preview”即可。
+若希望图片以后都由它打开，可在图片的“显示简介 > 打开方式”中选择
+`Coordinate Preview`，再点“全部更改…”。之后代码有更新时重新运行脚本，
+固定安装位置就会替换为最新构建，无需重新选择打开方式。脚本还会注销同一
+Bundle ID 的旧构建记录，避免右键菜单出现多个同名项；旧 App 文件不会被删除。
+
+脚本默认构建 `Release`。需要调试包时可使用：
+
+```sh
+CONFIGURATION=Debug ./scripts/build-and-install.sh
+```
+
+也可以用 Xcode 打开 `CoordinatePreview.xcodeproj`，选择
+`CoordinatePreview` scheme 后运行或 Archive。
 
 > macOS 自带“预览”没有开放可注入这类鼠标交互的第三方插件接口，因此本项目以可注册为默认图片查看器的独立 App 实现。
 
