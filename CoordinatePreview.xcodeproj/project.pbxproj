@@ -13,6 +13,7 @@
 		A10000000000000000000004 /* ImageWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* ImageWindowController.swift */; };
 		A10000000000000000000005 /* ImageCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* ImageCanvasView.swift */; };
 		A10000000000000000000006 /* ImageGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* ImageGeometry.swift */; };
+		A10000000000000000000010 /* ImageMinimapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* ImageMinimapView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +26,7 @@
 		A20000000000000000000007 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A20000000000000000000008 /* CoordinatePreview.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CoordinatePreview.entitlements; sourceTree = "<group>"; };
 		A20000000000000000000009 /* CoordinatePreview.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CoordinatePreview.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000010 /* ImageMinimapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageMinimapView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -55,6 +57,7 @@
 				A20000000000000000000003 /* LoadedImage.swift */,
 				A20000000000000000000004 /* ImageWindowController.swift */,
 				A20000000000000000000005 /* ImageCanvasView.swift */,
+				A20000000000000000000010 /* ImageMinimapView.swift */,
 				A20000000000000000000007 /* Info.plist */,
 				A20000000000000000000008 /* CoordinatePreview.entitlements */,
 			);
@@ -150,6 +153,7 @@
 				A10000000000000000000003 /* LoadedImage.swift in Sources */,
 				A10000000000000000000004 /* ImageWindowController.swift in Sources */,
 				A10000000000000000000005 /* ImageCanvasView.swift in Sources */,
+				A10000000000000000000010 /* ImageMinimapView.swift in Sources */,
 				A10000000000000000000006 /* ImageGeometry.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -334,4 +338,3 @@
 	};
 	rootObject = A80000000000000000000001 /* Project object */;
 }
-

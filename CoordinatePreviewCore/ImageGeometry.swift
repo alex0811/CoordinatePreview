@@ -107,6 +107,87 @@ public enum ImageGeometry {
         )
     }
 
+    /// Maps the visible portion of a rendered image into normalized image
+    /// coordinates. The result is suitable for drawing a minimap viewport,
+    /// where `(0, 0)` is the image's top-left and `(1, 1)` its bottom-right.
+    public static func normalizedViewportRect(
+        imageRect: CGRect,
+        viewport: CGRect
+    ) -> CGRect? {
+        guard imageRect.minX.isFinite,
+              imageRect.minY.isFinite,
+              imageRect.width.isFinite,
+              imageRect.height.isFinite,
+              viewport.minX.isFinite,
+              viewport.minY.isFinite,
+              viewport.width.isFinite,
+              viewport.height.isFinite,
+              imageRect.width > 0,
+              imageRect.height > 0,
+              viewport.width > 0,
+              viewport.height > 0 else {
+            return nil
+        }
+
+        let visibleRect = imageRect.intersection(viewport)
+        guard !visibleRect.isNull,
+              visibleRect.width > 0,
+              visibleRect.height > 0 else {
+            return nil
+        }
+
+        let minimumX = min(max((visibleRect.minX - imageRect.minX) / imageRect.width, 0), 1)
+        let maximumX = min(max((visibleRect.maxX - imageRect.minX) / imageRect.width, 0), 1)
+        let minimumY = min(max((visibleRect.minY - imageRect.minY) / imageRect.height, 0), 1)
+        let maximumY = min(max((visibleRect.maxY - imageRect.minY) / imageRect.height, 0), 1)
+
+        return CGRect(
+            x: minimumX,
+            y: minimumY,
+            width: maximumX - minimumX,
+            height: maximumY - minimumY
+        )
+    }
+
+    /// Computes the pan offset that places a normalized image point at the
+    /// center of the viewport whenever the image overhang allows it.
+    public static func panOffsetCentering(
+        normalizedPoint: CGPoint,
+        baseFit: CGRect,
+        bounds: CGRect,
+        zoom: CGFloat
+    ) -> CGPoint? {
+        guard normalizedPoint.x.isFinite,
+              normalizedPoint.y.isFinite,
+              zoom.isFinite,
+              zoom > 0,
+              baseFit.width > 0,
+              baseFit.height > 0,
+              bounds.width > 0,
+              bounds.height > 0 else {
+            return nil
+        }
+
+        let displayedAtZero = scaledImageRect(
+            baseFit: baseFit,
+            in: bounds,
+            zoom: zoom,
+            panOffset: .zero
+        )
+        let normalizedX = min(max(normalizedPoint.x, 0), 1)
+        let normalizedY = min(max(normalizedPoint.y, 0), 1)
+        let requestedOffset = CGPoint(
+            x: bounds.midX - (displayedAtZero.minX + normalizedX * displayedAtZero.width),
+            y: bounds.midY - (displayedAtZero.minY + normalizedY * displayedAtZero.height)
+        )
+
+        return clampPanOffset(
+            requestedOffset,
+            bounds: bounds,
+            displayedSize: displayedAtZero.size
+        )
+    }
+
     /// Computes the new pan offset so the image point currently under
     /// `focusPoint` (in view coordinates) stays under it after the zoom changes.
     public static func panOffsetForZoom(

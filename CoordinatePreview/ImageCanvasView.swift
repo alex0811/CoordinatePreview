@@ -18,6 +18,8 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
     private static let magnifierZoomDefaultsKey = "MagnifierZoom"
     private static let magnifierPreviewSide: CGFloat = 132
     private static let imagePadding: CGFloat = 24
+    private static let minimapSize = CGSize(width: 180, height: 120)
+    private static let minimapMargin: CGFloat = 16
 
     /// Base discrete zoom steps. `1.0` is the "fit in window" default. Extra
     /// steps are appended dynamically when a long image needs more zoom to
@@ -32,6 +34,7 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
 
     private let image: NSImage
     private let pixelSize: CGSize
+    private let minimapView: ImageMinimapView
     private var magnifierZoom: Int
     private var imageZoom: CGFloat = 1.0
     private var panOffset: CGPoint = .zero
@@ -91,17 +94,41 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
     init(loadedImage: LoadedImage) {
         image = loadedImage.image
         pixelSize = loadedImage.pixelSize
+        minimapView = ImageMinimapView(
+            image: loadedImage.image,
+            pixelSize: loadedImage.pixelSize
+        )
         let savedZoom = UserDefaults.standard.integer(forKey: Self.magnifierZoomDefaultsKey)
         magnifierZoom = Self.availableMagnifierZooms.contains(savedZoom)
             ? savedZoom
             : Self.defaultMagnifierZoom
         super.init(frame: .zero)
         registerForDraggedTypes([.fileURL])
+
+        minimapView.isHidden = true
+        minimapView.onNavigate = { [weak self] normalizedPoint in
+            self?.navigateUsingMinimap(to: normalizedPoint)
+        }
+        addSubview(minimapView)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+
+        let width = min(Self.minimapSize.width, max(bounds.width - Self.minimapMargin * 2, 0))
+        let height = min(Self.minimapSize.height, max(bounds.height - Self.minimapMargin * 2, 0))
+        minimapView.frame = CGRect(
+            x: bounds.maxX - Self.minimapMargin - width,
+            y: bounds.maxY - Self.minimapMargin - height,
+            width: width,
+            height: height
+        ).integral
+        updateMinimap()
     }
 
     override func updateTrackingAreas() {
@@ -249,6 +276,7 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
         }
 
         panOffset = newOffset
+        updateMinimap()
         let imageRect = renderedImageRect
         let visibleImageRect = imageRect.intersection(bounds)
         let fallbackCoordinate: PixelCoordinate?
@@ -395,6 +423,7 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
             bounds: CGRect(origin: .zero, size: newSize),
             displayedSize: displayedSize
         )
+        updateMinimap()
 
         guard let window else { return }
         updateCoordinate(at: convert(window.mouseLocationOutsideOfEventStream, from: nil))
@@ -411,7 +440,8 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
     }
 
     private func updateCoordinate(at location: CGPoint) {
-        guard bounds.contains(location) else {
+        let isOverMinimap = !minimapView.isHidden && minimapView.frame.contains(location)
+        guard bounds.contains(location), !isOverMinimap else {
             mouseLocation = nil
             coordinate = nil
             needsDisplay = true
@@ -433,11 +463,44 @@ final class ImageCanvasView: NSView, NSMenuItemValidation {
     }
 
     private func refreshCoordinateAfterTransform() {
+        updateMinimap()
         if let mouseLocation {
             updateCoordinate(at: mouseLocation)
         } else {
             needsDisplay = true
         }
+    }
+
+    private func navigateUsingMinimap(to normalizedPoint: CGPoint) {
+        guard let newOffset = ImageGeometry.panOffsetCentering(
+            normalizedPoint: normalizedPoint,
+            baseFit: baseImageRect,
+            bounds: bounds,
+            zoom: imageZoom
+        ) else {
+            return
+        }
+
+        panOffset = newOffset
+        window?.invalidateCursorRects(for: self)
+        refreshCoordinateAfterTransform()
+    }
+
+    private func updateMinimap() {
+        let imageRect = renderedImageRect
+        let imageOverflowsCanvas = imageRect.width > bounds.width + 0.5
+            || imageRect.height > bounds.height + 0.5
+        guard imageOverflowsCanvas,
+              let normalizedViewport = ImageGeometry.normalizedViewportRect(
+                  imageRect: imageRect,
+                  viewport: bounds
+              ) else {
+            minimapView.isHidden = true
+            return
+        }
+
+        minimapView.normalizedViewportRect = normalizedViewport
+        minimapView.isHidden = false
     }
 
     private func displayedSelection(

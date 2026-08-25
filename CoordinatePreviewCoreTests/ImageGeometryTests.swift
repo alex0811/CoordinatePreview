@@ -296,6 +296,74 @@ struct ImageGeometryTests {
         #expect(abs(clamped.y) < 0.001)
     }
 
+    @Test func minimapViewportMapsVisibleImageArea() {
+        let viewport = ImageGeometry.normalizedViewportRect(
+            imageRect: CGRect(x: -500, y: -100, width: 2000, height: 1000),
+            viewport: CGRect(x: 0, y: 0, width: 1000, height: 800)
+        )
+
+        #expect(abs((viewport?.minX ?? 0) - 0.25) < 0.001)
+        #expect(abs((viewport?.minY ?? 0) - 0.1) < 0.001)
+        #expect(abs((viewport?.width ?? 0) - 0.5) < 0.001)
+        #expect(abs((viewport?.height ?? 0) - 0.8) < 0.001)
+    }
+
+    @Test func minimapViewportUsesFullAxisWhenImageFits() {
+        let viewport = ImageGeometry.normalizedViewportRect(
+            imageRect: CGRect(x: 250, y: -400, width: 500, height: 1600),
+            viewport: CGRect(x: 0, y: 0, width: 1000, height: 800)
+        )
+
+        #expect(abs((viewport?.minX ?? -1) - 0) < 0.001)
+        #expect(abs((viewport?.width ?? 0) - 1) < 0.001)
+        #expect(abs((viewport?.minY ?? 0) - 0.25) < 0.001)
+        #expect(abs((viewport?.height ?? 0) - 0.5) < 0.001)
+    }
+
+    @Test func minimapNavigationCentersSelectedImagePoint() {
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let baseFit = CGRect(x: 250, y: 25, width: 500, height: 750)
+        let offset = ImageGeometry.panOffsetCentering(
+            normalizedPoint: CGPoint(x: 0.75, y: 0.25),
+            baseFit: baseFit,
+            bounds: bounds,
+            zoom: 4
+        )
+        let displayed = ImageGeometry.scaledImageRect(
+            baseFit: baseFit,
+            in: bounds,
+            zoom: 4,
+            panOffset: offset ?? .zero
+        )
+        let selectedPoint = CGPoint(
+            x: displayed.minX + displayed.width * 0.75,
+            y: displayed.minY + displayed.height * 0.25
+        )
+
+        #expect(abs(selectedPoint.x - bounds.midX) < 0.001)
+        #expect(abs(selectedPoint.y - bounds.midY) < 0.001)
+    }
+
+    @Test func minimapNavigationClampsAtImageEdges() {
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let baseFit = CGRect(x: 250, y: 25, width: 500, height: 750)
+        let topLeft = ImageGeometry.panOffsetCentering(
+            normalizedPoint: CGPoint(x: -1, y: -1),
+            baseFit: baseFit,
+            bounds: bounds,
+            zoom: 4
+        )
+        let bottomRight = ImageGeometry.panOffsetCentering(
+            normalizedPoint: CGPoint(x: 2, y: 2),
+            baseFit: baseFit,
+            bounds: bounds,
+            zoom: 4
+        )
+
+        #expect(topLeft == CGPoint(x: 500, y: 1100))
+        #expect(bottomRight == CGPoint(x: -500, y: -1100))
+    }
+
     @Test func jumpCentersSourcePixelRowAndPreservesHorizontalPan() {
         let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
         let baseFit = CGRect(x: 250, y: 25, width: 500, height: 750)
