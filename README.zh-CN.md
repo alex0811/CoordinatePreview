@@ -5,6 +5,7 @@
 ![macOS 13+](https://img.shields.io/badge/macOS-13.0%2B-000000?logo=apple&logoColor=white)
 ![Swift 6](https://img.shields.io/badge/Swift-6.0-F05138?logo=swift&logoColor=white)
 ![AppKit](https://img.shields.io/badge/UI-AppKit-147EFB)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **精确查看图片中的每一个原始像素。**
 
@@ -118,3 +119,7 @@ xcodebuild -project CoordinatePreview.xcodeproj \
 
 macOS 自带的“预览”没有为这类鼠标像素检查开放第三方扩展接口，因此 Coordinate
 Preview 以轻量独立查看器的形式实现，并可注册为图片文件的默认打开应用。
+
+## 开源许可
+
+Coordinate Preview 基于 [MIT License](LICENSE) 开源。

@@ -5,6 +5,7 @@
 ![macOS 13+](https://img.shields.io/badge/macOS-13.0%2B-000000?logo=apple&logoColor=white)
 ![Swift 6](https://img.shields.io/badge/Swift-6.0-F05138?logo=swift&logoColor=white)
 ![AppKit](https://img.shields.io/badge/UI-AppKit-147EFB)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Inspect any image down to the exact source pixel.**
 
@@ -126,3 +127,7 @@ xcodebuild -project CoordinatePreview.xcodeproj \
 macOS Preview does not expose a third-party extension point for this kind of
 pointer-driven pixel inspection. Coordinate Preview is therefore a small,
 standalone viewer that can be registered as the default app for image files.
+
+## License
+
+Coordinate Preview is available under the [MIT License](LICENSE).
